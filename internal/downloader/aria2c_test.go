@@ -7,10 +7,9 @@ import (
 
 func TestBuildAria2cArgs(t *testing.T) {
 	params := ParamsForTier("fast")
-	urls := []string{"https://example.com/a.bin", "https://example.com/b.bin"}
 	outputDir := "/tmp/downloads"
 
-	args := BuildAria2cArgs(params, urls, outputDir)
+	args := BuildAria2cArgs(params, outputDir)
 
 	// Flags using "-x value" syntax.
 	shortFlags := map[string]string{
@@ -37,13 +36,6 @@ func TestBuildAria2cArgs(t *testing.T) {
 	for _, flag := range longFlags {
 		if !slices.Contains(args, flag) {
 			t.Errorf("missing flag %s in args: %v", flag, args)
-		}
-	}
-
-	// Verify URLs are present.
-	for _, u := range urls {
-		if !slices.Contains(args, u) {
-			t.Errorf("missing URL %s in args: %v", u, args)
 		}
 	}
 }

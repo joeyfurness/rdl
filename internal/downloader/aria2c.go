@@ -13,8 +13,9 @@ func IsAria2cInstalled() bool {
 	return err == nil
 }
 
-// BuildAria2cArgs constructs the full argument list for an aria2c invocation.
-func BuildAria2cArgs(params DownloadParams, urls []string, outputDir string) []string {
+// BuildAria2cArgs constructs the base argument list for an aria2c invocation.
+// URLs are not included — they should be passed via an input file (-i flag).
+func BuildAria2cArgs(params DownloadParams, outputDir string) []string {
 	args := []string{
 		"-d", outputDir,
 		"-j", strconv.Itoa(params.ConcurrentFiles),
@@ -35,14 +36,22 @@ func BuildAria2cArgs(params DownloadParams, urls []string, outputDir string) []s
 		"--console-log-level=notice",
 		"--summary-interval=1",
 	}
-	args = append(args, urls...)
 	return args
 }
 
 // RunAria2cRaw executes aria2c as a subprocess with stdin, stdout, and stderr
-// connected directly to the parent process.
+// connected directly to the parent process. URLs are passed via an input file
+// (-i flag) so each URL is treated as a separate download.
 func RunAria2cRaw(params DownloadParams, urls []string, outputDir string) error {
-	args := BuildAria2cArgs(params, urls, outputDir)
+	inputFile, err := WriteInputFile(urls)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(inputFile)
+
+	args := BuildAria2cArgs(params, outputDir)
+	args = append(args, "-i", inputFile)
+
 	cmd := exec.Command("aria2c", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
