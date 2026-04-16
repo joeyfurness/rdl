@@ -14,6 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "rdl [links...]",
 	Short: "Real-Debrid download CLI",
@@ -35,6 +41,8 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.Version = version
+
 	// Global persistent flags
 	rootCmd.PersistentFlags().String("to", "", "download destination directory")
 	rootCmd.PersistentFlags().Bool("json", false, "output as JSON")
