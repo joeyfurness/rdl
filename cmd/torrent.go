@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/joeyfurness/rdl/internal/api"
@@ -25,7 +24,7 @@ var torrentAddCmd = &cobra.Command{
 			return fmt.Errorf("invalid magnet link: must start with 'magnet:'")
 		}
 
-		client, err := getClient()
+		client, err := GetAuthenticatedClient()
 		if err != nil {
 			return err
 		}
@@ -49,7 +48,7 @@ var torrentListCmd = &cobra.Command{
 	Short: "List your Real-Debrid torrents",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := getClient()
+		client, err := GetAuthenticatedClient()
 		if err != nil {
 			return err
 		}
@@ -86,7 +85,7 @@ If no file IDs are given, defaults to "all".`,
 			fileIDs = args[1]
 		}
 
-		client, err := getClient()
+		client, err := GetAuthenticatedClient()
 		if err != nil {
 			return err
 		}
@@ -107,7 +106,7 @@ var torrentDownloadCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
-		client, err := getClient()
+		client, err := GetAuthenticatedClient()
 		if err != nil {
 			return err
 		}
@@ -136,14 +135,4 @@ func init() {
 	torrentCmd.AddCommand(torrentListCmd)
 	torrentCmd.AddCommand(torrentSelectCmd)
 	torrentCmd.AddCommand(torrentDownloadCmd)
-}
-
-// getClient creates an authenticated API client.
-// This is a temporary helper that will be replaced during integration.
-func getClient() (*api.Client, error) {
-	token := os.Getenv("RDL_TOKEN")
-	if token == "" {
-		return nil, fmt.Errorf("not authenticated. Run: rdl auth login")
-	}
-	return api.NewClient(token), nil
 }

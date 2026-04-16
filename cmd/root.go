@@ -3,7 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/joeyfurness/rdl/internal/api"
+	"github.com/joeyfurness/rdl/internal/config"
+	"github.com/joeyfurness/rdl/internal/downloader"
+	"github.com/joeyfurness/rdl/internal/input"
+	"github.com/joeyfurness/rdl/internal/store"
+	"github.com/joeyfurness/rdl/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +48,233 @@ func init() {
 }
 
 func runDownload(cmd *cobra.Command, args []string) error {
-	fmt.Println("rdl: download command not yet implemented")
+	// 1. Load config
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// 2. Determine output mode
+	jsonFlag, _ := cmd.Flags().GetBool("json")
+	quietFlag, _ := cmd.Flags().GetBool("quiet")
+	isTTY := input.IsTerminal()
+	envMode := os.Getenv("RDL_MODE")
+	mode := ui.DetectMode(jsonFlag, quietFlag, envMode, cfg.Output.Mode, isTTY)
+
+	// 3. Create emitter based on mode
+	var emitter ui.Emitter
+	switch mode {
+	case ui.ModeJSON:
+		emitter = ui.NewJSONEmitter(os.Stdout)
+	case ui.ModeQuiet:
+		emitter = ui.NewQuietEmitter(os.Stderr)
+	default:
+		emitter = ui.NewJSONEmitter(os.Stdout) // fallback until TUI is integrated
+	}
+
+	// 4. Open history store (non-fatal if fails)
+	historyPath := filepath.Join(config.ConfigDir(), "history.db")
+	db, _ := store.Open(historyPath)
+	if db != nil {
+		defer db.Close()
+	}
+
+	// 5. Collect links from all sources
+	var links []string
+
+	// --retry-failed: load from history DB
+	retryFailed, _ := cmd.Flags().GetBool("retry-failed")
+	if retryFailed && db != nil {
+		failed, err := db.ListFailed()
+		if err == nil {
+			for _, entry := range failed {
+				links = append(links, entry.OriginalLink)
+			}
+		}
+	}
+
+	// Positional args
+	links = append(links, input.ParseArgs(args)...)
+
+	// --file flag
+	fileFlag, _ := cmd.Flags().GetString("file")
+	if fileFlag != "" {
+		if fileFlag == "-" {
+			stdinLinks, err := input.ParseStdin()
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			links = append(links, stdinLinks...)
+		} else {
+			fileLinks, err := input.ParseFile(fileFlag)
+			if err != nil {
+				return fmt.Errorf("reading file: %w", err)
+			}
+			links = append(links, fileLinks...)
+		}
+	}
+
+	// --clip flag
+	clipFlag, _ := cmd.Flags().GetBool("clip")
+	if clipFlag {
+		clipLinks, err := input.ParseClipboard()
+		if err != nil {
+			return fmt.Errorf("reading clipboard: %w", err)
+		}
+		links = append(links, clipLinks...)
+	}
+
+	// stdin pipe (if not TTY and no other input sources provided)
+	if !isTTY && len(links) == 0 && fileFlag == "" {
+		stdinLinks, err := input.ParseStdin()
+		if err == nil {
+			links = append(links, stdinLinks...)
+		}
+	}
+
+	// Deduplicate all links
+	links = input.Deduplicate(links)
+
+	// 6. If no links, print usage hint and return
+	if len(links) == 0 {
+		fmt.Fprintln(os.Stderr, "No links provided. Usage:")
+		fmt.Fprintln(os.Stderr, "  rdl <link> [link...]")
+		fmt.Fprintln(os.Stderr, "  rdl -f links.txt")
+		fmt.Fprintln(os.Stderr, "  rdl --clip")
+		fmt.Fprintln(os.Stderr, "  echo 'https://...' | rdl")
+		return nil
+	}
+
+	// 7. Authenticate
+	client, err := GetAuthenticatedClient()
+	if err != nil {
+		return fmt.Errorf("authentication: %w", err)
+	}
+
+	// 8. Emit start event
+	emitter.Emit(ui.Event{
+		Type:       "start",
+		TotalLinks: len(links),
+	})
+
+	// 9. Unrestrict each link
+	var downloadURLs []string
+	failCount := 0
+
+	for _, link := range links {
+		result, err := api.UnrestrictLink(client, link)
+		if err != nil {
+			emitter.Emit(ui.Event{
+				Type:    "error",
+				Link:    link,
+				Message: err.Error(),
+			})
+			if db != nil {
+				db.AddHistory(store.HistoryEntry{
+					OriginalLink: link,
+					Status:       store.StatusFailed,
+					ErrorMsg:     err.Error(),
+				})
+			}
+			failCount++
+			continue
+		}
+
+		emitter.Emit(ui.Event{
+			Type:     "unrestricted",
+			Link:     link,
+			Filename: result.Filename,
+			Size:     result.Filesize,
+		})
+
+		if db != nil {
+			db.AddHistory(store.HistoryEntry{
+				OriginalLink: link,
+				Filename:     result.Filename,
+				Filesize:     result.Filesize,
+				DownloadURL:  result.Download,
+				Status:       store.StatusDownloading,
+			})
+		}
+
+		downloadURLs = append(downloadURLs, result.Download)
+	}
+
+	// 10. If --dry-run: print what would download and return
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "Dry run: would download %d file(s)\n", len(downloadURLs))
+		for _, u := range downloadURLs {
+			fmt.Println(u)
+		}
+		return nil
+	}
+
+	if len(downloadURLs) == 0 {
+		return fmt.Errorf("all links failed to unrestrict")
+	}
+
+	// 11. Determine output directory (flag --to > env RDL_OUTPUT_DIR > config)
+	outputDir, _ := cmd.Flags().GetString("to")
+	if outputDir == "" {
+		outputDir = os.Getenv("RDL_OUTPUT_DIR")
+	}
+	if outputDir == "" {
+		outputDir = cfg.Download.Directory
+	}
+	outputDir = config.ExpandPath(outputDir)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+
+	// 12. Check aria2c installed
+	if !downloader.IsAria2cInstalled() {
+		return fmt.Errorf("aria2c is not installed. Install it with: brew install aria2")
+	}
+
+	// 13. Determine speed tier (--fast/--slow flags > config)
+	fastFlag, _ := cmd.Flags().GetBool("fast")
+	slowFlag, _ := cmd.Flags().GetBool("slow")
+
+	tier := cfg.Download.SpeedTier
+	if fastFlag {
+		tier = "fast"
+	} else if slowFlag {
+		tier = "standard"
+	}
+	params := downloader.ParamsForTier(tier)
+
+	// 14. Run aria2c
+	dlErr := downloader.RunAria2cRaw(params, downloadURLs, outputDir)
+
+	// 15. Emit summary event
+	succeeded := len(downloadURLs)
+	if dlErr != nil {
+		// If aria2c failed, we count all as failed
+		failCount += succeeded
+		succeeded = 0
+	}
+	emitter.Emit(ui.Event{
+		Type:      "summary",
+		Total:     len(links),
+		Succeeded: succeeded,
+		Failed:    failCount,
+	})
+
+	// 16. Print failure hint if any failed
+	if failCount > 0 {
+		fmt.Fprintf(os.Stderr, "\n%d download(s) failed. Retry with: rdl --retry-failed\n", failCount)
+	}
+
+	// 17. Exit with appropriate code
+	if dlErr != nil {
+		return fmt.Errorf("aria2c: %w", dlErr)
+	}
+	if failCount > 0 {
+		os.Exit(1)
+	}
+
 	return nil
 }
