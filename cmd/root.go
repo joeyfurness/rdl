@@ -21,7 +21,11 @@ var rootCmd = &cobra.Command{
 
 Provide one or more links as arguments, from a file, or from the clipboard.
 Links are unrestricted via the Real-Debrid API and downloaded with aria2c.`,
-	RunE: runDownload,
+	Args:                  cobra.ArbitraryArgs,
+	DisableFlagParsing:    false,
+	RunE:                  runDownload,
+	TraverseChildren:      true,
+	SilenceUsage:          true,
 }
 
 func Execute() {
