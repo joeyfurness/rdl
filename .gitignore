@@ -1,0 +1,17 @@
+# Binaries
+rdl
+*.exe
+
+# Dependencies
+vendor/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+
+# Auth
+auth.json
