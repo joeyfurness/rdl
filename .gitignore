@@ -15,3 +15,6 @@ vendor/
 
 # Auth
 auth.json
+
+# GoReleaser
+dist/
