@@ -1,47 +1,84 @@
+<div align="center">
+
 # rdl
 
-A fast command-line tool for downloading files through [Real-Debrid](https://real-debrid.com). Paste your hoster links, and `rdl` unrestricts them via the Real-Debrid API and downloads with optimized [aria2c](https://aria2.github.io/) multi-connection transfers.
+**Fast CLI for downloading files through [Real-Debrid](https://real-debrid.com)**
+
+Unrestrict hoster links and download with optimized multi-connection [aria2c](https://aria2.github.io/) transfers.
+
+[![Go](https://img.shields.io/github/go-mod/go-version/joeyfurness/rdl)](https://go.dev/)
+[![License](https://img.shields.io/github/license/joeyfurness/rdl)](LICENSE)
+[![CI](https://github.com/joeyfurness/rdl/actions/workflows/ci.yml/badge.svg)](https://github.com/joeyfurness/rdl/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/joeyfurness/rdl)](https://github.com/joeyfurness/rdl/releases)
+
+[Install](#install) · [Quick Start](#quick-start) · [Commands](#commands) · [Configuration](#configuration)
+
+</div>
+
+---
 
 ## Features
 
 - **One command to download** — `rdl <links>` handles unrestriction and downloading in one step
 - **Multiple input methods** — positional args, file (`-f`), clipboard (`--clip`), or stdin pipe
-- **Parallel multi-connection downloads** — powered by aria2c with tuned parameters
-- **Persistent queue** — accumulate links over time with `rdl queue add`, download later with `rdl queue run`
-- **Download history** — track completed and failed downloads, retry failures with `--retry-failed`
+- **Parallel multi-connection downloads** — powered by aria2c with tuned speed tier parameters
+- **Persistent queue** — accumulate links with `rdl queue add`, download later with `rdl queue run`
+- **Download history** — track downloads, retry failures with `--retry-failed`
 - **Torrent support** — add magnet links, select files, download when ready
-- **OAuth device flow** — one-time setup, automatic token refresh
+- **OAuth device flow** — one-time browser login, automatic token refresh
 - **Smart output** — interactive progress in terminal, NDJSON when piped, quiet mode for scripts
 
 ## Install
 
 ### Prerequisites
 
-- [Go 1.22+](https://go.dev/dl/)
 - [aria2](https://aria2.github.io/) — `brew install aria2`
 - A [Real-Debrid](https://real-debrid.com) premium account
 
-### Build from source
+<details open>
+<summary><strong>From source</strong></summary>
 
 ```bash
+# Requires Go 1.22+
 git clone https://github.com/joeyfurness/rdl.git
 cd rdl
-go build -o rdl .
+make build
+# Optionally: sudo mv rdl /usr/local/bin/
 ```
 
-Optionally move the binary to your PATH:
+</details>
+
+<details>
+<summary><strong>From GitHub release</strong></summary>
+
+Download the latest binary from [Releases](https://github.com/joeyfurness/rdl/releases):
 
 ```bash
-mv rdl /usr/local/bin/
+# macOS (Apple Silicon)
+curl -Lo rdl.tar.gz https://github.com/joeyfurness/rdl/releases/latest/download/rdl_darwin_arm64.tar.gz
+tar xzf rdl.tar.gz
+sudo mv rdl /usr/local/bin/
+
+# macOS (Intel)
+curl -Lo rdl.tar.gz https://github.com/joeyfurness/rdl/releases/latest/download/rdl_darwin_amd64.tar.gz
+tar xzf rdl.tar.gz
+sudo mv rdl /usr/local/bin/
+
+# Linux (x86_64)
+curl -Lo rdl.tar.gz https://github.com/joeyfurness/rdl/releases/latest/download/rdl_linux_amd64.tar.gz
+tar xzf rdl.tar.gz
+sudo mv rdl /usr/local/bin/
 ```
+
+</details>
 
 ## Quick Start
 
 ```bash
-# First run triggers OAuth login
+# First run triggers OAuth login automatically
 rdl https://rapidgator.net/file/abc123
 
-# Multiple links at once
+# Multiple links
 rdl https://host.com/file1 https://host.com/file2 https://host.com/file3
 
 # From a file (one link per line, # comments supported)
@@ -58,30 +95,58 @@ rdl --dry-run https://host.com/file1
 
 # Download to a specific directory
 rdl --to ~/Downloads/MyFolder https://host.com/file1
+
+# Retry any previously failed downloads
+rdl --retry-failed
 ```
 
 ## Commands
 
-```
-rdl [links...]                    Download links (default command)
-rdl auth login                    Authenticate with Real-Debrid
-rdl auth logout                   Remove stored tokens
-rdl auth status                   Show authentication state
-rdl queue add <links...>          Add links to persistent queue
-rdl queue list                    Show queued links
-rdl queue clear                   Clear the queue
-rdl queue run                     Download all queued links
-rdl torrent add <magnet>          Add a magnet link
-rdl torrent list                  List your torrents
-rdl torrent select <id> [all]     Select files from a torrent
-rdl torrent download <id>         Download a completed torrent
-rdl history                       Show download history
-rdl history --failed              Show only failed downloads
-rdl config get <key>              Get a config value
-rdl config edit                   Open config in $EDITOR
-rdl config path                   Print config file location
-rdl completions <bash|zsh|fish>   Generate shell completions
-```
+### Download (default)
+
+| Command | Description |
+|---------|-------------|
+| `rdl [links...]` | Unrestrict and download links |
+| `rdl -f links.txt` | Download links from file |
+| `rdl --clip` | Download links from clipboard |
+| `rdl --retry-failed` | Retry previously failed downloads |
+
+### Auth
+
+| Command | Description |
+|---------|-------------|
+| `rdl auth login` | Authenticate with Real-Debrid |
+| `rdl auth logout` | Remove stored tokens |
+| `rdl auth status` | Show authentication state |
+
+### Queue
+
+| Command | Description |
+|---------|-------------|
+| `rdl queue add <links...>` | Add links to persistent queue |
+| `rdl queue list` | Show queued links |
+| `rdl queue clear` | Clear the queue |
+| `rdl queue run` | Download all queued links |
+
+### Torrent
+
+| Command | Description |
+|---------|-------------|
+| `rdl torrent add <magnet>` | Add a magnet link |
+| `rdl torrent list` | List your torrents |
+| `rdl torrent select <id> [all]` | Select files from a torrent |
+| `rdl torrent download <id>` | Download a completed torrent |
+
+### Utility
+
+| Command | Description |
+|---------|-------------|
+| `rdl history` | Show download history |
+| `rdl history --failed` | Show only failed downloads |
+| `rdl config get <key>` | Get a config value |
+| `rdl config edit` | Open config in `$EDITOR` |
+| `rdl config path` | Show config file path |
+| `rdl completions <shell>` | Generate shell completions (bash/zsh/fish) |
 
 ## Flags
 
@@ -90,34 +155,33 @@ rdl completions <bash|zsh|fish>   Generate shell completions
 | `--to <dir>` | Output directory |
 | `-f, --file <path>` | Read links from file |
 | `--clip` | Read links from clipboard |
-| `--dry-run` | Show what would download without downloading |
+| `--dry-run` | Preview without downloading |
 | `--retry-failed` | Retry previously failed downloads |
 | `--json` | Force JSON output |
-| `-q, --quiet` | Suppress non-essential output |
-| `--fast` | Use fast speed tier (fewer concurrent files, more connections each) |
-| `--slow` | Use standard speed tier |
+| `-q, --quiet` | Errors only |
+| `--fast` | Fast speed tier (2 files, 8 connections each) |
+| `--slow` | Standard speed tier (3 files, 4 connections each) |
 | `-v, --verbose` | Increase verbosity |
 | `--no-color` | Disable colored output |
 
 ## Output Modes
 
-`rdl` auto-detects the best output mode:
+rdl auto-detects the best output mode:
 
-- **Interactive** (terminal) — progress bars and status updates
-- **JSON** (piped/redirected) — newline-delimited JSON events, ideal for `jq`
-- **Quiet** (`-q`) — errors only, for scripts that just need the exit code
+| Mode | When | Description |
+|------|------|-------------|
+| Interactive | Terminal (TTY) | Progress bars and status |
+| JSON | Piped / `--json` | Newline-delimited JSON events |
+| Quiet | `-q` flag | Errors to stderr only |
 
 ```bash
-# JSON events when piped
-rdl https://host.com/file | jq '.event'
-
-# Force JSON in terminal
-rdl --json https://host.com/file
+# Pipe to jq for structured output
+rdl https://host.com/file | jq 'select(.event == "summary")'
 ```
 
 ## Configuration
 
-Config lives at `~/.config/rdl/config.toml`:
+Config file: `~/.config/rdl/config.toml`
 
 ```toml
 [download]
@@ -135,13 +199,13 @@ open_after = false
 overwrite = "resume"       # resume | ask | always | never
 ```
 
-Override with environment variables:
+### Environment Variables
 
-```bash
-RDL_TOKEN=...         # Skip OAuth, use this API token
-RDL_OUTPUT_DIR=...    # Override download directory
-RDL_MODE=json         # Override output mode
-```
+| Variable | Description |
+|----------|-------------|
+| `RDL_TOKEN` | Skip OAuth, use this API token directly |
+| `RDL_OUTPUT_DIR` | Override download directory |
+| `RDL_MODE` | Override output mode (json/quiet/interactive) |
 
 ## Speed Tiers
 
@@ -151,14 +215,7 @@ RDL_MODE=json         # Override output mode
 | Connections per file | 8 | 4 |
 | Piece size | 8M | 4M |
 
-Auto-detected by default, override with `--fast` or `--slow`.
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | All downloads succeeded |
-| 1 | Partial or total failure |
+Auto-detected by default. Override with `--fast` or `--slow`.
 
 ## Shell Completions
 
@@ -173,6 +230,10 @@ rdl completions bash > /usr/local/etc/bash_completion.d/rdl
 rdl completions fish > ~/.config/fish/completions/rdl.fish
 ```
 
+## Contributing
+
+Found a bug or have an idea? [Open an issue](https://github.com/joeyfurness/rdl/issues).
+
 ## License
 
-MIT
+[MIT](LICENSE)
