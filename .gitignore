@@ -18,3 +18,8 @@ auth.json
 
 # GoReleaser
 dist/
+
+# Claude
+.claude/
+CLAUDE.md
+docs/superpowers/
