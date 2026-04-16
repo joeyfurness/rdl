@@ -29,7 +29,7 @@ func BuildAria2cArgs(params DownloadParams, urls []string, outputDir string) []s
 		"--max-connection-per-server=" + strconv.Itoa(params.ConnectionsPerFile),
 		"--connect-timeout=30",
 		"--timeout=600",
-		"--lowest-speed-limit=1M",
+		"--lowest-speed-limit=100K",
 		"--max-overall-upload-limit=0",
 		"--check-certificate=true",
 		"--console-log-level=notice",

@@ -32,7 +32,7 @@ func TestBuildAria2cArgs(t *testing.T) {
 	longFlags := []string{
 		"--file-allocation=falloc",
 		"--continue=true",
-		"--lowest-speed-limit=1M",
+		"--lowest-speed-limit=100K",
 	}
 	for _, flag := range longFlags {
 		if !slices.Contains(args, flag) {
