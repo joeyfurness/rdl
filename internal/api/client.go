@@ -96,7 +96,11 @@ func (c *Client) doRequest(method, path string, form url.Values, result interfac
 			}
 		}
 
-		defer resp.Body.Close()
+		respBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return fmt.Errorf("reading response: %w", readErr)
+		}
 
 		if resp.StatusCode == http.StatusNoContent {
 			return nil
@@ -104,15 +108,15 @@ func (c *Client) doRequest(method, path string, form url.Values, result interfac
 
 		if resp.StatusCode >= 400 {
 			var apiErr APIError
-			if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
-				return fmt.Errorf("HTTP %d: failed to decode error response: %w", resp.StatusCode, err)
+			if err := json.Unmarshal(respBody, &apiErr); err != nil {
+				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 			}
 			apiErr.HTTPStatus = resp.StatusCode
 			return &apiErr
 		}
 
 		if result != nil {
-			if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			if err := json.Unmarshal(respBody, result); err != nil {
 				return fmt.Errorf("decoding response: %w", err)
 			}
 		}

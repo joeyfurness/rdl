@@ -21,7 +21,7 @@ var historyCmd = &cobra.Command{
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("creating config directory: %w", err)
 		}
-		dbPath := filepath.Join(dir, "queue.db")
+		dbPath := filepath.Join(dir, "history.db")
 		db, err := store.Open(dbPath)
 		if err != nil {
 			return fmt.Errorf("opening database: %w", err)

@@ -4,11 +4,9 @@ import "time"
 
 // Status constants for history entries.
 const (
-	StatusPending       = "pending"
-	StatusUnrestricting = "unrestricting"
-	StatusDownloading   = "downloading"
-	StatusCompleted     = "completed"
-	StatusFailed        = "failed"
+	StatusDownloading = "downloading"
+	StatusCompleted   = "completed"
+	StatusFailed      = "failed"
 )
 
 // HistoryEntry represents a single download in the history table.

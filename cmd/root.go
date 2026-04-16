@@ -52,20 +52,18 @@ func init() {
 }
 
 func runDownload(cmd *cobra.Command, args []string) error {
-	// 1. Load config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// 2. Determine output mode
+	// Determine output mode
 	jsonFlag, _ := cmd.Flags().GetBool("json")
 	quietFlag, _ := cmd.Flags().GetBool("quiet")
 	isTTY := input.IsTerminal()
 	envMode := os.Getenv("RDL_MODE")
 	mode := ui.DetectMode(jsonFlag, quietFlag, envMode, cfg.Output.Mode, isTTY)
 
-	// 3. Create emitter based on mode
 	var emitter ui.Emitter
 	switch mode {
 	case ui.ModeJSON:
@@ -76,24 +74,29 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		emitter = ui.NewJSONEmitter(os.Stdout) // fallback until TUI is integrated
 	}
 
-	// 4. Open history store (non-fatal if fails)
+	// Open history store (warn if fails, but non-fatal)
 	historyPath := filepath.Join(config.ConfigDir(), "history.db")
-	db, _ := store.Open(historyPath)
+	db, dbErr := store.Open(historyPath)
+	if dbErr != nil {
+		fmt.Fprintf(os.Stderr, "rdl: warning: could not open history database: %v\n", dbErr)
+	}
 	if db != nil {
 		defer db.Close()
 	}
 
-	// 5. Collect links from all sources
 	var links []string
 
-	// --retry-failed: load from history DB
 	retryFailed, _ := cmd.Flags().GetBool("retry-failed")
-	if retryFailed && db != nil {
+	if retryFailed {
+		if db == nil {
+			return fmt.Errorf("cannot retry failed downloads: history database unavailable")
+		}
 		failed, err := db.ListFailed()
-		if err == nil {
-			for _, entry := range failed {
-				links = append(links, entry.OriginalLink)
-			}
+		if err != nil {
+			return fmt.Errorf("listing failed downloads: %w", err)
+		}
+		for _, entry := range failed {
+			links = append(links, entry.OriginalLink)
 		}
 	}
 
@@ -139,7 +142,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	// Deduplicate all links
 	links = input.Deduplicate(links)
 
-	// 6. If no links, print usage hint and return
+	// If no links, print usage hint
 	if len(links) == 0 {
 		fmt.Fprintln(os.Stderr, "No links provided. Usage:")
 		fmt.Fprintln(os.Stderr, "  rdl <link> [link...]")
@@ -149,19 +152,24 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// 7. Authenticate
+	// Check aria2c early to avoid wasting API calls
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	if !dryRun && !downloader.IsAria2cInstalled() {
+		return fmt.Errorf("aria2c is not installed. Install it with: brew install aria2")
+	}
+
 	client, err := GetAuthenticatedClient()
 	if err != nil {
 		return fmt.Errorf("authentication: %w", err)
 	}
 
-	// 8. Emit start event
+	// Emit start event
 	emitter.Emit(ui.Event{
 		Type:       "start",
 		TotalLinks: len(links),
 	})
 
-	// 9. Unrestrict each link
+	// Unrestrict each link
 	var downloadURLs []string
 	failCount := 0
 
@@ -204,8 +212,6 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		downloadURLs = append(downloadURLs, result.Download)
 	}
 
-	// 10. If --dry-run: print what would download and return
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Fprintf(os.Stderr, "Dry run: would download %d file(s)\n", len(downloadURLs))
 		for _, u := range downloadURLs {
@@ -218,7 +224,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("all links failed to unrestrict")
 	}
 
-	// 11. Determine output directory (flag --to > env RDL_OUTPUT_DIR > config)
+	// Determine output directory (flag --to > env RDL_OUTPUT_DIR > config)
 	outputDir, _ := cmd.Flags().GetString("to")
 	if outputDir == "" {
 		outputDir = os.Getenv("RDL_OUTPUT_DIR")
@@ -233,12 +239,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	// 12. Check aria2c installed
-	if !downloader.IsAria2cInstalled() {
-		return fmt.Errorf("aria2c is not installed. Install it with: brew install aria2")
-	}
-
-	// 13. Determine speed tier (--fast/--slow flags > config)
+	// Determine speed tier (--fast/--slow flags > config)
 	fastFlag, _ := cmd.Flags().GetBool("fast")
 	slowFlag, _ := cmd.Flags().GetBool("slow")
 
@@ -250,10 +251,10 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	}
 	params := downloader.ParamsForTier(tier)
 
-	// 14. Run aria2c
+	// Run aria2c
 	dlErr := downloader.RunAria2cRaw(params, downloadURLs, outputDir)
 
-	// 15. Emit summary event
+	// Emit summary
 	succeeded := len(downloadURLs)
 	if dlErr != nil {
 		// If aria2c failed, we count all as failed
@@ -267,17 +268,16 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		Failed:    failCount,
 	})
 
-	// 16. Print failure hint if any failed
+	// Print failure hint
 	if failCount > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d download(s) failed. Retry with: rdl --retry-failed\n", failCount)
 	}
 
-	// 17. Exit with appropriate code
 	if dlErr != nil {
 		return fmt.Errorf("aria2c: %w", dlErr)
 	}
 	if failCount > 0 {
-		os.Exit(1)
+		return fmt.Errorf("%d download(s) failed", failCount)
 	}
 
 	return nil
